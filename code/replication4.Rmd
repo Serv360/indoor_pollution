@@ -1,0 +1,6 @@
+## Traduction du code Stata en R pour la Figure 4
+
+```{r}
+
+```
+

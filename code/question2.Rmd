@@ -5,6 +5,7 @@
 ```{r}
 # Load the tidyverse package
 library(tidyverse)
+library(rlang)
 ```
 
 
@@ -17,6 +18,30 @@ data_hh <- haven::read_dta("../data/HHBL_roster_FINAL.dta")
 # Inspect the data using tidyverse functions
 glimpse(data_hh)  # View the structure of the data in a tidyverse-friendly format
 ```
+```{r}
+data_hh %>%
+  summarise_all(~sum(!is.na(.)))
+```
+```{r}
+data_hh %>%
+  group_by(hhid) %>%
+  summarize(
+    edulevel_spouse_partner = if_else(any(relatehoh_str == "Spouse/partner"), first(edulevel[relatehoh_str == "Spouse/partner"]), NA_real_)
+  )
+```
+
+
+```{r}
+data_hh %>% group_by(hhid) %>%
+  summarize(
+    edulevel_mean = mean(edulevel, na.rm = TRUE),
+    edulevel_max = max(edulevel, na.rm = TRUE),
+    literacy_percent = mean(literate, na.rm = TRUE),
+    edulevel_spouse_partner = if_else(any(relatehoh_str == "Spouse/partner"), first(edulevel[relatehoh_str == "Spouse/partner"]), NA_real_)
+  ) %>%
+  summarise_all(~sum(!is.na(.)))
+```
+
 
 ## Observation données education
 
@@ -105,7 +130,7 @@ data_hh %>%
 
 Choix de la variable d'éducation :
 - Moyenne de l'edulevel ou du literate au niveau du ménage
-- Edulevel ou literate de la personne qui cuisine
+- Edulevel ou literate de la personne qui cuisine (proxy Spouse/Partner)
 - Max de l'edulevel du ménage
 - Moyenne de l'edulevel des adultes du ménage (>18 ans par exemple)
 
@@ -126,21 +151,21 @@ data_four <- haven::read_dta("../data/StoveVar_MoOwnStove_Replication.dta")
 ## Observation données prise en main du four
 
 ```{r}
-col_names <- names(data_four)
-
-# Boucle à travers chaque nom de colonne
-for (col_name in col_names) {
-  # Vérifie si le nom de colonne ne contient pas "control"
-  if (!grepl("control", col_name)) {
-    # Affiche le nom de la colonne et son attribut "label"
-    print(paste("Nom de la colonne:", col_name))
-    print(paste("Label:", attr(data_four[[col_name]], "label")))
-  }
-}
+# col_names <- names(data_four)
+# 
+# # Boucle à travers chaque nom de colonne
+# for (col_name in col_names) {
+#   # Vérifie si le nom de colonne ne contient pas "control"
+#   if (!grepl("control", col_name)) {
+#     # Affiche le nom de la colonne et son attribut "label"
+#     print(paste("Nom de la colonne:", col_name))
+#     print(paste("Label:", attr(data_four[[col_name]], "label")))
+#   }
+# }
 ```
 
 ```{r}
-data_four$hhid
+data_four
 ```
 
 ```{r}
@@ -176,10 +201,14 @@ household_summary <- hh_four %>% filter(treat == 1) %>%
     edulevel_mean = mean(edulevel, na.rm = TRUE),
     edulevel_max = max(edulevel, na.rm = TRUE),
     literacy_percent = mean(literate, na.rm = TRUE),
-    across(starts_with("v_mo_control"), ~first(.))
+    across(starts_with("v_mo_control"), ~first(.)),
+    edulevel_spouse_partner = if_else(any(relatehoh_str == "Spouse/partner"), first(edulevel[relatehoh_str == "Spouse/partner"]), NA_real_)
   ) %>%
   # Replace non-finite values with NA
   mutate_if(~!all(is.finite(.)), ~replace(., !is.finite(.), NA))
+```
+```{r}
+#glimpse(household_summary)
 ```
 
 
@@ -202,7 +231,7 @@ list_models <- list()
 
 i = 1
 
-x_list = c("literacy_percent", "edulevel_max", "edulevel_mean")
+x_list = c("literacy_percent", "edulevel_max", "edulevel_mean", "edulevel_spouse_partner")
 
 
 for(x in x_list) {
@@ -218,20 +247,232 @@ for(x in x_list) {
     # bin3 <- sum(data_replication3$treatXBINYRstoveown_moALL_25to36 == 1, na.rm = TRUE)
     # bin4 <- sum(data_replication3$treatXBINYRstoveown_moALL_37to48 == 1, na.rm = TRUE)
     
+    threshold_top_x <- quantile(household_summary[[x]], probs = 0.98, na.rm = TRUE)
+    threshold_bottom_x <- quantile(household_summary[[x]], probs = 0.02, na.rm = TRUE)
+
+    threshold_top_y <- quantile(household_summary[[y]], probs = 0.98, na.rm = TRUE)
+    threshold_bottom_y <- quantile(household_summary[[y]], probs = 0.02, na.rm = TRUE)
+    
+    cleaned_data <- household_summary %>%
+  filter(.data[[x]] >= threshold_bottom_x, .data[[x]] <= threshold_top_x) %>%
+      filter(.data[[y]] >= threshold_bottom_y, .data[[y]] <= threshold_top_y)
+    
     # Régression pour le Panel A
-    formuleA = paste(y, "~", x, " +", paste(grep("^v_mo_control", names(data), value = TRUE), collapse = " + "), sep = "")
-    model_panel_a <- lm(as.formula(formuleA), data = household_summary, weights = weight)
+    formuleA = paste(y, "~", x, "+", paste(grep("^v_mo_control", names(cleaned_data), value = TRUE), collapse = " + "), sep = " ")
+    model_panel_a <- lm(as.formula(formuleA), data = cleaned_data, weights = weight)
   
     #print(summary(model_panel_a, cluster=c("hhid_M")))
     print(paste("Regresssion de", y, "sur", x))
     print(summary(model_panel_a)$coefficients[1:2, 1:4])
+    print(nobs(model_panel_a))
     
     #i <- i + 1
   }
 }
 ```
 
-## Observation données pollution intérieure
+```{r}
+
+x_list2 = c("literacy_percent", "edulevel_max", "edulevel_mean")
+
+for (y in yvar) {
+    # Calcul des moyennes du groupe de contrôle
+    #control_mean <- mean(household_summary[household_summary$treat == 0, y][[y]], na.rm = TRUE, weights=weight)
+    
+    #Calcul du nombre d'observations dans chaque bin
+    # bin1 <- sum(data_replication3$treatXBINYRstoveown_moALL_0to12 == 1, na.rm = TRUE)
+    # bin2 <- sum(data_replication3$treatXBINYRstoveown_moALL_13to24 == 1, na.rm = TRUE)
+    # bin3 <- sum(data_replication3$treatXBINYRstoveown_moALL_25to36 == 1, na.rm = TRUE)
+    # bin4 <- sum(data_replication3$treatXBINYRstoveown_moALL_37to48 == 1, na.rm = TRUE)
+    
+    threshold_top_y <- quantile(household_summary[[y]], probs = 0.98, na.rm = TRUE)
+    threshold_bottom_y <- quantile(household_summary[[y]], probs = 0.02, na.rm = TRUE)
+  
+    cleaned_data <- household_summary %>%
+      filter(.data[[y]] >= threshold_bottom_y, .data[[y]] <= threshold_top_y)
+    
+    for (x in x_list2) {
+      threshold_top_x <- quantile(household_summary[[x]], probs = 0.98, na.rm = TRUE)
+    threshold_bottom_x <- quantile(household_summary[[x]], probs = 0.02, na.rm = TRUE)
+
+    cleaned_data <- cleaned_data %>%
+  filter(.data[[x]] >= threshold_bottom_x, .data[[x]] <= threshold_top_x)
+    }
+    
+
+    
+    # Régression pour le Panel A
+    formuleA = paste(y, "~", paste(x_list2, collapse=" + "), "+", paste(grep("^v_mo_control", names(cleaned_data), value = TRUE), collapse = " + "), sep = " ")
+    model_panel_a <- lm(formuleA, data = cleaned_data, weights = weight)
+  
+    #print(summary(model_panel_a, cluster=c("hhid_M")))
+    print(paste("Regresssion de", y, "sur", paste(x_list2, collapse=" + ")))
+    print(summary(model_panel_a)$coefficients[1:(length(x_list2)+1), 1:4])
+    print(nobs(model_panel_a))
+    
+    #i <- i + 1
+}
+```
+
+## Data pollution intérieure primary cook
+
+```{r}
+# Read the .dta file using haven::read_dta
+data_exposure <- haven::read_dta("../data/ADCO_MoOwnStove_Replication.dta")
+
+# Inspect the data using tidyverse functions
+#glimpse(data_four)  # View the structure of the data in a tidyverse-friendly format
+```
+
+```{r}
+data_exposure %>% filter(primarycook_bl == 1) %>%
+  summarise_all(~sum(!is.na(.)))
+```
 
 
+## Observation données pollution intérieure primary cook
+
+```{r}
+# col_names <- names(data_exposure)
+# 
+# # Boucle à travers chaque nom de colonne
+# for (col_name in col_names) {
+#   # Vérifie si le nom de colonne ne contient pas "control"
+#   if (!grepl("control", col_name)) {
+#     # Affiche le nom de la colonne et son attribut "label"
+#     print(paste("Nom de la colonne:", col_name))
+#     print(paste("Label:", attr(data_exposure[[col_name]], "label")))
+#   }
+# }
+```
+
+```{r}
+col_names <- names(data_exposure)
+
+# Boucle à travers chaque nom de colonne
+for (col_name in col_names) {
+  # Vérifie si le nom de colonne ne contient pas "control"
+  if (grepl("CO", col_name)) {
+    # Affiche le nom de la colonne et son attribut "label"
+    print(paste("Nom de la colonne:", col_name))
+    print(paste("Label:", attr(data_exposure[[col_name]], "label")))
+  }
+}
+```
+
+```{r}
+hh_summary_exp <- data_hh %>%
+  group_by(hhid) %>%
+  summarize(
+    edulevel_mean = mean(edulevel, na.rm = TRUE),
+    edulevel_max = max(edulevel, na.rm = TRUE),
+    literacy_percent = mean(literate, na.rm = TRUE),
+    edulevel_spouse_partner = if_else(any(relatehoh_str == "Spouse/partner"), first(edulevel[relatehoh_str == "Spouse/partner"]), NA_real_)
+  ) %>%
+  # Replace non-finite values with NA
+  mutate_if(~!all(is.finite(.)), ~replace(., !is.finite(.), NA))
+```
+
+```{r}
+hh_summary_exp %>% summarise_all(~sum(!is.na(.)))
+```
+
+
+```{r}
+hh_exposure = inner_join(hh_summary_exp, data_exposure, by="hhid") %>% filter(primarycook_bl == 1)
+```
+
+```{r}
+hh_exposure %>% select(edulevel_mean, edulevel_max, 
+                       literacy_percent, edulevel_spouse_partner,
+                       COad99, COad99_2
+                       ) %>% summarise_all(~sum(!is.na(.)))
+```
+
+```{r}
+i = 1
+
+yvar = c("COad99", "COad99_2")
+
+x_list = c("literacy_percent", "edulevel_max", "edulevel_mean", "edulevel_spouse_partner")
+
+
+for(x in x_list) {
+  
+  print("========================================")
+  for (y in yvar) {
+    # Calcul des moyennes du groupe de contrôle
+    #control_mean <- mean(household_summary[household_summary$treat == 0, y][[y]], na.rm = TRUE, weights=weight)
+    
+    #Calcul du nombre d'observations dans chaque bin
+    # bin1 <- sum(data_replication3$treatXBINYRstoveown_moALL_0to12 == 1, na.rm = TRUE)
+    # bin2 <- sum(data_replication3$treatXBINYRstoveown_moALL_13to24 == 1, na.rm = TRUE)
+    # bin3 <- sum(data_replication3$treatXBINYRstoveown_moALL_25to36 == 1, na.rm = TRUE)
+    # bin4 <- sum(data_replication3$treatXBINYRstoveown_moALL_37to48 == 1, na.rm = TRUE)
+    
+    threshold_top_x <- quantile(hh_exposure[[x]], probs = 0.98, na.rm = TRUE)
+    threshold_bottom_x <- quantile(hh_exposure[[x]], probs = 0.02, na.rm = TRUE)
+
+    threshold_top_y <- quantile(hh_exposure[[y]], probs = 0.98, na.rm = TRUE)
+    threshold_bottom_y <- quantile(hh_exposure[[y]], probs = 0.02, na.rm = TRUE)
+    
+    cleaned_data <- hh_exposure %>%
+  filter(.data[[x]] >= threshold_bottom_x, .data[[x]] <= threshold_top_x) %>%
+      filter(.data[[y]] >= threshold_bottom_y, .data[[y]] <= threshold_top_y)
+    
+    # Régression pour le Panel A
+    formuleA = paste(y, "~", x, "+", paste(grep("^v_mo_control", names(cleaned_data), value = TRUE), collapse = " + "), sep = " ")
+    model_panel_a <- lm(as.formula(formuleA), data = cleaned_data, weights = weight)
+  
+    #print(summary(model_panel_a, cluster=c("hhid_M")))
+    print(paste("Regresssion de", y, "sur", x))
+    print(summary(model_panel_a)$coefficients[1:2, 1:4])
+    print(nobs(model_panel_a))
+    
+    #i <- i + 1
+  }
+}
+```
+
+```{r}
+x_list2 = c("literacy_percent", "edulevel_max", "edulevel_mean")
+
+for (y in yvar) {
+    # Calcul des moyennes du groupe de contrôle
+    #control_mean <- mean(household_summary[household_summary$treat == 0, y][[y]], na.rm = TRUE, weights=weight)
+    
+    #Calcul du nombre d'observations dans chaque bin
+    # bin1 <- sum(data_replication3$treatXBINYRstoveown_moALL_0to12 == 1, na.rm = TRUE)
+    # bin2 <- sum(data_replication3$treatXBINYRstoveown_moALL_13to24 == 1, na.rm = TRUE)
+    # bin3 <- sum(data_replication3$treatXBINYRstoveown_moALL_25to36 == 1, na.rm = TRUE)
+    # bin4 <- sum(data_replication3$treatXBINYRstoveown_moALL_37to48 == 1, na.rm = TRUE)
+    
+    threshold_top_y <- quantile(hh_exposure[[y]], probs = 0.98, na.rm = TRUE)
+    threshold_bottom_y <- quantile(hh_exposure[[y]], probs = 0.02, na.rm = TRUE)
+  
+    cleaned_data <- hh_exposure %>%
+      filter(.data[[y]] >= threshold_bottom_y, .data[[y]] <= threshold_top_y)
+    
+    for (x in x_list2) {
+      threshold_top_x <- quantile(hh_exposure[[x]], probs = 0.98, na.rm = TRUE)
+    threshold_bottom_x <- quantile(hh_exposure[[x]], probs = 0.02, na.rm = TRUE)
+
+    cleaned_data <- cleaned_data %>%
+  filter(.data[[x]] >= threshold_bottom_x, .data[[x]] <= threshold_top_x)
+    }
+    
+
+    
+    # Régression pour le Panel A
+    formuleA = paste(y, "~", paste(x_list2, collapse=" + "), "+", paste(grep("^v_mo_control", names(cleaned_data), value = TRUE), collapse = " + "), sep = " ")
+    model_panel_a <- lm(formuleA, data = cleaned_data, weights = weight)
+  
+    #print(summary(model_panel_a, cluster=c("hhid_M")))
+    print(paste("Regresssion de", y, "sur", paste(x_list2, collapse=" + ")))
+    print(summary(model_panel_a)$coefficients[1:(length(x_list2)+1), 1:4])
+    print(nobs(model_panel_a))
+    
+    #i <- i + 1
+}
+```
 

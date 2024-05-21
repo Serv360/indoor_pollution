@@ -1,0 +1,237 @@
+# Question 2
+
+## Packages
+
+```{r}
+# Load the tidyverse package
+library(tidyverse)
+```
+
+
+## Data households
+
+```{r}
+# Read the .dta file using haven::read_dta
+data_hh <- haven::read_dta("../data/HHBL_roster_FINAL.dta")
+
+# Inspect the data using tidyverse functions
+glimpse(data_hh)  # View the structure of the data in a tidyverse-friendly format
+```
+
+## Observation données education
+
+```{r}
+print(paste("edulevel : ", attr(data_hh$edulevel, "label")))
+print(paste("literate : ", attr(data_hh$literate, "label")))
+print(paste("school : ", attr(data_hh$school, "label")))
+print(paste("inschool : ", attr(data_hh$inschool, "label")))
+print(paste("shg : ", attr(data_hh$shg, "label")))
+```
+```{r}
+filtered_data_hh <- data_hh %>% 
+  filter(edulevel <= 20)
+
+ggplot(filtered_data_hh, aes(x = age, y = edulevel)) +
+  geom_point(alpha = 0.1) +
+  geom_smooth(method = "lm", se = FALSE) + # Add a linear regression line
+  labs(title = "Education Level by Age",
+       x = "Age",
+       y = "Education Level") +
+  theme_minimal()
+```
+
+```{r}
+filtered_data_hh <- data_hh %>% 
+  filter(edulevel <= 20)
+
+# Plot edulevel as a function of age with boxplot
+ggplot(filtered_data_hh, aes(x = as.factor(age), y = edulevel)) +
+  geom_boxplot(alpha = 0.5) + # Add transparency to the boxplots
+  labs(title = "Education Level by Age (Excluding edulevel > 20)",
+       x = "Age",
+       y = "Education Level") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) # Rotate x-axis labels for better readability
+
+# Filter data for other household members (excluding heads and spouses/partners)
+other_members_data_hh <- data_hh %>% 
+  filter(!relatehoh_str %in% c("Head", "Spouse/partner"))
+
+# Calculate literacy percentage for other household members
+literacy_percentage_others <- other_members_data_hh %>% 
+  summarize(literacy_rate = mean(literate, na.rm = TRUE) * 100)
+
+# Print the literacy percentage for other household members
+print(literacy_percentage_others)
+```
+
+
+
+```{r}
+# Calculate literacy percentage
+literacy_percentage <- data_hh %>% 
+  group_by(relatehoh_str) %>%
+  summarize(literacy_rate = mean(literate, na.rm = TRUE) * 100)
+
+# Print the literacy percentage
+print(literacy_percentage)
+```
+
+```{r}
+# Summarize data by hhid
+summary_data_hh <- data_hh %>% filter(edulevel <= 20) %>%
+  group_by(hhid) %>%
+  summarize(mean_edulevel = mean(edulevel, na.rm = TRUE),
+            mean_literate = mean(literate, na.rm = TRUE)) %>%
+  ungroup()
+
+# Plot mean edulevel as a function of mean literate
+ggplot(summary_data_hh, aes(x = mean_literate, y = mean_edulevel)) +
+  geom_point(alpha = 0.2) + # Add transparency to the points
+  geom_smooth(method = "lm", se = FALSE) + # Add a linear regression line
+  labs(title = "Mean Education Level by Mean Literacy Rate per Household",
+       x = "Mean Literacy Rate",
+       y = "Mean Education Level") +
+  theme_minimal()
+```
+
+```{r}
+data_hh %>%
+  group_by(relatehoh_str, male) %>%
+  summarise(count = n()) %>%
+  arrange(relatehoh_str, male)
+```
+
+
+Choix de la variable d'éducation :
+- Moyenne de l'edulevel ou du literate au niveau du ménage
+- Edulevel ou literate de la personne qui cuisine
+- Max de l'edulevel du ménage
+- Moyenne de l'edulevel des adultes du ménage (>18 ans par exemple)
+
+Elements de reflexion :
+- 96% des cuisiniers principaux dans un ménage sont des femmes
+- Les enfants ont un niveau d'illétrisme plus bas que les heads of family (majoritairement des hommes) et que les spouses/partners (majoritairement des femmes). Ils ont un edulevel déjà plus haut en moyenne à partir de 10-12 ans.
+
+## Data prise en main du four
+
+```{r}
+# Read the .dta file using haven::read_dta
+data_four <- haven::read_dta("../data/StoveVar_MoOwnStove_Replication.dta")
+
+# Inspect the data using tidyverse functions
+#glimpse(data_four)  # View the structure of the data in a tidyverse-friendly format
+```
+
+## Observation données prise en main du four
+
+```{r}
+col_names <- names(data_four)
+
+# Boucle à travers chaque nom de colonne
+for (col_name in col_names) {
+  # Vérifie si le nom de colonne ne contient pas "control"
+  if (!grepl("control", col_name)) {
+    # Affiche le nom de la colonne et son attribut "label"
+    print(paste("Nom de la colonne:", col_name))
+    print(paste("Label:", attr(data_four[[col_name]], "label")))
+  }
+}
+```
+
+```{r}
+data_four$hhid
+```
+
+```{r}
+data_four %>%
+  distinct() %>%
+  nrow()
+```
+```{r}
+unique_first_rows <- data_four %>%
+  distinct(hhid_M, .keep_all = TRUE)
+```
+
+```{r}
+nrow(unique_first_rows)
+```
+
+
+```{r}
+hh_four = inner_join(data_hh, unique_first_rows, by="hhid")
+```
+
+```{r}
+household_summary <- hh_four %>% filter(treat == 1) %>%
+  group_by(hhid) %>%
+  summarize(
+    weight = first(weight),
+    mealslowpol_good_2 = first(mealslowpol_good_2),
+    n_meals_lastweek = first(n_meals_lastweek),
+    stovebuilt = first(stovebuilt),
+    anystove = first(anystove),
+    goodcond = first(goodcond),
+    mealslowpol_good_2 = first(mealslowpol_good_2),
+    edulevel_mean = mean(edulevel, na.rm = TRUE),
+    edulevel_max = max(edulevel, na.rm = TRUE),
+    literacy_percent = mean(literate, na.rm = TRUE),
+    across(starts_with("v_mo_control"), ~first(.))
+  ) %>%
+  # Replace non-finite values with NA
+  mutate_if(~!all(is.finite(.)), ~replace(., !is.finite(.), NA))
+```
+
+
+```{r}
+yvar <- c("stovebuilt", "anystove", "goodcond", "mealslowpol_good_2", "goodmeals75")
+```
+
+
+```{r}
+household_summary$goodmeals_prop <- household_summary$mealslowpol_good_2 / household_summary$n_meals_lastweek
+household_summary$goodmeals_prop[household_summary$mealslowpol_good_2 == 0 & household_summary$n_meals_lastweek == 0] <- 0
+
+
+household_summary$goodmeals75 <- ifelse(!is.na(household_summary$goodmeals_prop), 0, NA)
+
+household_summary$goodmeals75[household_summary$goodmeals_prop >= 0.75 & !is.na(household_summary$goodmeals_prop)] <- 1
+
+results <- data.frame()
+list_models <- list()
+
+i = 1
+
+x_list = c("literacy_percent", "edulevel_max", "edulevel_mean")
+
+
+for(x in x_list) {
+  
+  print("========================================")
+  for (y in yvar) {
+    # Calcul des moyennes du groupe de contrôle
+    #control_mean <- mean(household_summary[household_summary$treat == 0, y][[y]], na.rm = TRUE, weights=weight)
+    
+    #Calcul du nombre d'observations dans chaque bin
+    # bin1 <- sum(data_replication3$treatXBINYRstoveown_moALL_0to12 == 1, na.rm = TRUE)
+    # bin2 <- sum(data_replication3$treatXBINYRstoveown_moALL_13to24 == 1, na.rm = TRUE)
+    # bin3 <- sum(data_replication3$treatXBINYRstoveown_moALL_25to36 == 1, na.rm = TRUE)
+    # bin4 <- sum(data_replication3$treatXBINYRstoveown_moALL_37to48 == 1, na.rm = TRUE)
+    
+    # Régression pour le Panel A
+    formuleA = paste(y, "~", x, " +", paste(grep("^v_mo_control", names(data), value = TRUE), collapse = " + "), sep = "")
+    model_panel_a <- lm(as.formula(formuleA), data = household_summary, weights = weight)
+  
+    #print(summary(model_panel_a, cluster=c("hhid_M")))
+    print(paste("Regresssion de", y, "sur", x))
+    print(summary(model_panel_a)$coefficients[1:2, 1:4])
+    
+    #i <- i + 1
+  }
+}
+```
+
+## Observation données pollution intérieure
+
+
+

@@ -1,0 +1,346 @@
+```{r}
+library(tidyverse)
+library(broom)
+library(stargazer)
+library(lmtest)
+library(sandwich)
+library(gdata) 
+library(zoo)
+```
+
+```{r}
+# Charger le jeu de données
+data_replication3 <- haven::read_dta("../data/StoveVar_MoOwnStove_Replication.dta")
+```
+
+```{r}
+attr(data_replication3$treat, "label")
+```
+
+
+```{r}
+yvar <- c("stovebuilt", "anystove", "goodcond", "mealslowpol_good_2", "goodmeals75")
+```
+
+
+```{r}
+data_replication3$goodmeals_prop <- data_replication3$mealslowpol_good_2 / data_replication3$n_meals_lastweek
+data_replication3$goodmeals_prop[data_replication3$mealslowpol_good_2 == 0 & data_replication3$n_meals_lastweek == 0] <- 0
+
+
+data_replication3$goodmeals75 <- ifelse(!is.na(data_replication3$goodmeals_prop), 0, NA)
+
+data_replication3$goodmeals75[data_replication3$goodmeals_prop >= 0.75 & !is.na(data_replication3$goodmeals_prop)] <- 1
+
+results <- data.frame()
+list_models <- list()
+
+i = 1
+
+for (y in yvar) {
+  # Calcul des moyennes du groupe de contrôle
+  control_mean <- mean(data_replication3[data_replication3$treat == 0, y][[y]], na.rm = TRUE, weights=weight)
+  
+  #Calcul du nombre d'observations dans chaque bin
+  bin1 <- sum(data_replication3$treatXBINYRstoveown_moALL_0to12 == 1, na.rm = TRUE)
+  bin2 <- sum(data_replication3$treatXBINYRstoveown_moALL_13to24 == 1, na.rm = TRUE)
+  bin3 <- sum(data_replication3$treatXBINYRstoveown_moALL_25to36 == 1, na.rm = TRUE)
+  bin4 <- sum(data_replication3$treatXBINYRstoveown_moALL_37to48 == 1, na.rm = TRUE)
+  
+  # Régression pour le Panel A
+  formuleA = paste(y, "~", "treat +", paste(grep("^v_mo_control", names(data), value = TRUE), collapse = " + "), sep = "")
+  model_panel_a <- lm(as.formula(formuleA), data = data_replication3, weights = weight)
+  
+  # Compute clustered standard errors
+  vcov_cl <- vcovCL(model_panel_a, cluster = ~ hhid_M)
+  print(sqrt(diag(vcov_cl))[2])
+
+  #print(summary(model_panel_a, cluster=c("hhid_M")))
+  
+  # Régression pour le Panel B
+  fomulaB <- paste(y, " ~ treatXBINYRstoveown_moALL_0to12 + treatXBINYRstoveown_moALL_13to24 + treatXBINYRstoveown_moALL_25to36 + treatXBINYRstoveown_moALL_37to48 + ", paste(grep("^v_mo_control", names(data_replication3), value = TRUE), collapse = " + "), sep = "")
+  model_panel_b <- lm(as.formula(fomulaB), data = data_replication3)
+  
+  vcov_cl <- vcovCL(model_panel_b, cluster = ~ hhid_M)
+  print(sqrt(diag(vcov_cl))[2:5])
+  #print(summary(model_panel_b))
+  
+  
+  i <- i + 1
+}
+
+# Nommer les colonnes du dataframe de résultats
+colnames(results) <- c("Variable", "Control_Mean", "Bin1_Count", "Bin2_Count", "Bin3_Count", "Bin4_Count",
+                        "Estimate", "Std.Error", "t value", "Pr(>|t|)", "Estimate_PanelB", "Std.Error_PanelB")
+
+```
+
+```{r}
+results
+```
+
+
+
+## Garbage
+
+
+```{r}
+
+
+# Générer la variable pour 75% ou plus des repas cuisinés sur un bon poêle
+data_replication3$goodmeals_prop <- data_replication3$mealslowpol_good_2 / data_replication3$n_meals_lastweek
+data_replication3$goodmeals_prop[data_replication3$mealslowpol_good_2 == 0 & data_replication3$n_meals_lastweek == 0] <- 0
+data_replication3$goodmeals75 <- ifelse(!is.na(data_replication3$goodmeals_prop) & data_replication3$goodmeals_prop >= 0.75, 1, 0)
+
+# Variables à utiliser dans la boucle
+yvar <- c("stovebuilt", "anystove", "goodcond", "mealslowpol_good_2", "goodmeals75")
+
+# Initialiser un dataframe pour stocker les résultats
+results <- data.frame()
+
+# Boucle sur les variables y
+for (y in yvar) {
+  # Calcul des moyennes du groupe de contrôle
+  control_mean <- mean(data_replication3[data_replication3$treat == 0, y], na.rm = TRUE, weights=weight)
+  
+  # Calcul du nombre d'observations dans chaque bin
+  bin1 <- sum(data_replication3$treatXBINYRstoveown_moALL_0to12 == 1, na.rm = TRUE)
+  bin2 <- sum(data_replication3$treatXBINYRstoveown_moALL_13to24 == 1, na.rm = TRUE)
+  bin3 <- sum(data_replication3$treatXBINYRstoveown_moALL_25to36 == 1, na.rm = TRUE)
+  bin4 <- sum(data_replication3$treatXBINYRstoveown_moALL_37to48 == 1, na.rm = TRUE)
+  
+  # Régression pour le Panel A
+  model_panel_a <- lm(as.formula(paste(y, "~", "treat +", paste(grep("^v_mo_control", names(data), value = TRUE), collapse = " + "), sep = "")), data = data_replication3, weights = weight)
+  summary_model_panel_a <- summary(model_panel_a)
+  out_panel_a <- coef(summary_model_panel_a)[1, ]
+  out_panel_a <- out_panel_a[c("Estimate", "Std. Error", "t value", "Pr(>|t|)")]
+  out_panel_a <- round(out_panel_a, 3)
+  
+  # Régression pour le Panel B
+  model_panel_b <- lm(as.formula(paste(y, "~", "treatXBINYRstoveown_moALL_0to12 + treatXBINYRstoveown_moALL_13to24 +",
+                                      "treatXBINYRstoveown_moALL_25to36 + treatXBINYRstoveown_moALL_37to48", sep = "")), data = data_replication3)
+  summary_model_panel_b <- summary(model_panel_b)
+  out_panel_b <- coef(summary_model_panel_b)[1, ]
+  out_panel_b <- out_panel_b[c("Estimate", "Std. Error")]
+  out_panel_b <- round(out_panel_b, 3)
+  
+  # Stocker les résultats dans un dataframe
+  results <- rbind(results, c(y, control_mean, bin1, bin2, bin3, bin4, out_panel_a, out_panel_b))
+}
+
+# Nommer les colonnes du dataframe de résultats
+colnames(results) <- c("Variable", "Control_Mean", "Bin1_Count", "Bin2_Count", "Bin3_Count", "Bin4_Count",
+                        "Estimate", "Std.Error", "t value", "Pr(>|t|)", "Estimate_PanelB", "Std.Error_PanelB")
+
+# Afficher les résultats
+print(results)
+```
+
+
+
+```{r}
+
+# Generate variable for 75% or more of meals cooked on a good stove
+data_replication3 <- data_replication3 %>%
+  mutate(goodmeals_prop = ifelse(mealslowpol_good_2 == 0 & n_meals_lastweek == 0, 0, mealslowpol_good_2 / n_meals_lastweek),
+         goodmeals_prop = ifelse(is.na(goodmeals_prop), 0, goodmeals_prop),
+         goodmeals75 = ifelse(goodmeals_prop >= 0.75, 1, 0))
+
+# Define outcome variables
+yvar <- c("stovebuilt", "anystove", "goodcond", "mealslowpol_good_2", "goodmeals75")
+
+# Initialize an empty list to store regression results
+regression_results <- list()
+
+# Loop over the outcome variables
+for (y in yvar) {
+  # Fit the regression model
+  formula <- paste(y, " ~ treat + ", paste(grep("^v_mo_control", names(data_replication3), value = TRUE), collapse = " + "), sep = "")
+  model <- lm(formula, data = data_replication3)
+  
+  # Tidy up the regression results
+  tidy_results <- tidy(model)
+  
+  # Extract control group mean
+  control_mean <- data_replication3 %>%
+    filter(treat == 0) %>%
+    summarise(mean = mean(!!sym(y), na.rm = TRUE))
+  
+  # Generate control group mean
+  control_mean <- as.numeric(control_mean$mean)
+  
+  # Extract number of observations in each bin
+  bin_counts <- data_replication3 %>%
+    group_by(treatXBINYRstoveown_moALL_0to12) %>%
+    summarise(count = n())
+  
+  # Generate regression table
+  regression_table <- tidy_results %>%
+    mutate_if(is.numeric, ~round(., 3)) %>%
+    mutate(term = ifelse(term == "(Intercept)", "Treat", term)) %>%
+    select(-std.error, -statistic, -p.value) %>%
+    mutate_at(vars(contains("treatXBINYRstoveown_moALL")), list(~ifelse(is.na(.), "", sprintf("%.3f", .)))) %>%
+    bind_cols(control_group_mean = control_mean) %>%
+    bind_rows(bin_counts)
+  
+  # Store the regression results in a list
+  regression_results[[y]] <- regression_table
+}
+```
+
+```{r}
+regression_results$stovebuilt
+```
+
+```{r}
+# Load required libraries
+library(haven)   # To load Stata datasets
+library(plm)     # For panel data analysis
+library(lmtest)  # For F-tests
+
+# Load the Stata dataset
+data <- haven::read_dta("../data/StoveVar_MoOwnStove_Replication.dta")
+
+# Generate variable for 75% or more of meals cooked on a good stove
+data$goodmeals_prop <- ifelse(data$mealslowpol_good_2 == 0 & data$n_meals_lastweek == 0, 0,
+                              data$mealslowpol_good_2 / data$n_meals_lastweek)
+data$goodmeals_prop[data$goodmeals_prop < 0.75] <- 0
+data$goodmeals75 <- as.numeric(data$goodmeals_prop >= 0.75)
+
+# Define outcome variables
+yvars <- c("stovebuilt", "anystove", "goodcond", "mealslowpol_good_2", "goodmeals75")
+
+# Loop over each outcome variable
+for (y in yvars) {
+  # Generate control group means
+  control_mean <- mean(data[data$treat == 0, y], na.rm = TRUE)
+  
+  # Generate the number of observations in each bin
+  bin1 <- sum(data$treatXBINYRstoveown_moALL_0to12 == 1)
+  bin2 <- sum(data$treatXBINYRstoveown_moALL_13to24 == 1)
+  bin3 <- sum(data$treatXBINYRstoveown_moALL_25to36 == 1)
+  bin4 <- sum(data$treatXBINYRstoveown_moALL_37to48 == 1)
+  
+  # Panel A regression
+  fomulaA <- paste(y, " ~ treat + ", paste(grep("^v_mo_control", names(data_replication3), value = TRUE), collapse = " + "), sep = "")
+  model_panel_A <- plm(as.formula(fomulaA),
+                       data = data, index = c("hhid_M"), model = "within", effect = "twoways",
+                       weights = data$weight)
+  
+  # Output Panel A results
+  if (y == yvars[1]) {
+    out_A <- coeftest(model_panel_A, vcov = vcovHC(model_panel_A, cluster = "group"))
+  } else {
+    out_A <- rbind(out_A, coeftest(model_panel_A, vcov = vcovHC(model_panel_A, cluster = "group")))
+  }
+  
+  # Panel B regression
+  fomulaB <- paste(y, " ~ treatXBINYRstoveown_moALL_0to12 - treatXBINYRstoveown_moALL_37to48 + ", paste(grep("^v_mo_control", names(data_replication3), value = TRUE), collapse = " + "), sep = "")
+  model_panel_B <- plm(as.formula(formulaB),
+                       data = data, index = c("hhid_M"), model = "within", effect = "twoways",
+                       weights = data$weight)
+  
+  # Output Panel B results
+  if (y == yvars[1]) {
+    out_B <- coeftest(model_panel_B, vcov = vcovHC(model_panel_B, cluster = "group"))
+  } else {
+    out_B <- rbind(out_B, coeftest(model_panel_B, vcov = vcovHC(model_panel_B, cluster = "group")))
+  }
+}
+
+# Create tables from the results
+Table3A <- cbind(out_A[,"Estimate"], out_A[,"Std. Error"])
+Table3B <- cbind(out_B[,"Estimate"], out_B[,"Std. Error"])
+
+# Print the tables
+print(Table3A)
+print(Table3B)
+
+```
+
+```{r}
+# Generate variable for 75% or more of meals cooked on a good stove
+data$goodmeals_prop <- ifelse(data$mealslowpol_good_2 == 0 & data$n_meals_lastweek == 0, 0,
+                              data$mealslowpol_good_2 / data$n_meals_lastweek)
+data$goodmeals_prop[data$goodmeals_prop < 0.75] <- 0
+data$goodmeals75 <- as.numeric(data$goodmeals_prop >= 0.75)
+
+# Define outcome variables
+yvars <- c("stovebuilt", "anystove", "goodcond", "mealslowpol_good_2", "goodmeals75")
+
+# Initialize empty data frames to store results
+out_A <- data.frame()
+out_B <- data.frame()
+
+# Loop over each outcome variable
+for (y in yvars) {
+  # Generate control group means
+  control_mean <- mean(data[data$treat == 0, y], na.rm = TRUE)
+  
+  # Generate the number of observations in each bin
+  bin1 <- sum(data$treatXBINYRstoveown_moALL_0to12 == 1)
+  bin2 <- sum(data$treatXBINYRstoveown_moALL_13to24 == 1)
+  bin3 <- sum(data$treatXBINYRstoveown_moALL_25to36 == 1)
+  bin4 <- sum(data$treatXBINYRstoveown_moALL_37to48 == 1)
+  
+  # Panel A regression
+  fomulaA <- paste(y, " ~ treat + ", paste(grep("^v_mo_control", names(data_replication3), value = TRUE), collapse = " + "), sep = "")
+  model_panel_A <- lm(as.formula(fomulaA),
+                      data = data)
+  
+  # Output Panel A results
+  out_A <- rbind(out_A, summary(model_panel_A)$coefficients[1:2, c("Estimate", "Std. Error")])
+  
+  # Panel B regression
+  fomulaB <- paste(y, " ~ treatXBINYRstoveown_moALL_0to12 - treatXBINYRstoveown_moALL_37to48 + ", paste(grep("^v_mo_control", names(data_replication3), value = TRUE), collapse = " + "), sep = "")
+  model_panel_B <- lm(as.formula(fomulaB),
+                      data = data)
+  
+  # Output Panel B results
+  out_B <- rbind(out_B, summary(model_panel_B)$coefficients[1:2, c("Estimate", "Std. Error")])
+}
+
+# Print the tables
+print(out_A)
+print(out_B)
+```
+
+```{r}
+data$goodmeals_prop <- ifelse(data$mealslowpol_good_2 == 0 & data$n_meals_lastweek == 0, 0,
+                              data$mealslowpol_good_2 / data$n_meals_lastweek)
+data$goodmeals75 <- as.numeric(data$goodmeals_prop >= 0.75)
+
+# Define outcome variables
+yvars <- c("stovebuilt", "anystove", "goodcond", "mealslowpol_good_2", "goodmeals75")
+
+# Loop over each outcome variable
+for (y in yvars) {
+  # Generate control group means
+  control_mean <- mean(data[data$treat == 0, y], na.rm = TRUE)
+  
+  # Generate the number of observations in each bin
+  bin1 <- sum(data$treatXBINYRstoveown_moALL_0to12 == 1)
+  bin2 <- sum(data$treatXBINYRstoveown_moALL_13to24 == 1)
+  bin3 <- sum(data$treatXBINYRstoveown_moALL_25to36 == 1)
+  bin4 <- sum(data$treatXBINYRstoveown_moALL_37to48 == 1)
+  
+  # PANEL A regression
+  fomulaA <- paste(y, " ~ treat + ", paste(grep("^v_mo_control", names(data_replication3), value = TRUE), collapse = " + "), sep = "")
+  model_panel_A <- plm(as.formula(fomulaA),
+                       data = data, index = c("hhid_M"), model = "within", effect = "twoways")
+  
+  # Output PANEL A results
+  summary(model_panel_A)
+  
+  # Output results to files
+  # Assuming you want to write to a CSV file
+  write.csv(summary(model_panel_A), file = paste0("Table3A_", y, ".csv"))
+}
+```
+
+```{r}
+data_replication3$weight
+```
+
+
+

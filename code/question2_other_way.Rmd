@@ -193,12 +193,12 @@ household_summary <- hh_four %>% filter(treat == 1) %>%
   group_by(hhid) %>%
   summarize(
     weight = first(weight),
-    mealslowpol_good_2 = first(mealslowpol_good_2),
-    n_meals_lastweek = first(n_meals_lastweek),
-    stovebuilt = first(stovebuilt),
-    anystove = first(anystove),
-    goodcond = first(goodcond),
-    mealslowpol_good_2 = first(mealslowpol_good_2),
+    mealslowpol_good_2 = max(mealslowpol_good_2, na.rm = TRUE),
+    n_meals_lastweek = max(n_meals_lastweek, na.rm = TRUE),
+    stovebuilt = max(stovebuilt, na.rm = TRUE),
+    anystove = max(anystove, na.rm = TRUE),
+    goodcond = max(goodcond, na.rm = TRUE),
+    mealslowpol_good_2 = max(mealslowpol_good_2, na.rm = TRUE),
     edulevel_mean = mean(edulevel, na.rm = TRUE),
     edulevel_max = max(edulevel, na.rm = TRUE),
     literacy_percent = mean(literate, na.rm = TRUE),

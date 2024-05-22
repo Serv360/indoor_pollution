@@ -66,45 +66,73 @@ ggplot(filtered_data_hh, aes(x = age, y = edulevel)) +
 ```
 
 ```{r}
+sort(unique(filtered_data_hh$age))
+```
+
+
+```{r}
 filtered_data_hh <- data_hh %>% 
   filter(edulevel <= 20)
+
+filtered_data_hh <- filtered_data_hh[!is.na(filtered_data_hh$age),]
 
 # Plot edulevel as a function of age with boxplot
 ggplot(filtered_data_hh, aes(x = as.factor(age), y = edulevel)) +
   geom_boxplot(alpha = 0.5) + # Add transparency to the boxplots
   labs(title = "Education Level by Age (Excluding edulevel > 20)",
        x = "Age",
-       y = "Education Level") +
+       y = "Niveau d'éducation") +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 90, hjust = 1)) # Rotate x-axis labels for better readability
 
-# Filter data for other household members (excluding heads and spouses/partners)
-other_members_data_hh <- data_hh %>% 
-  filter(!relatehoh_str %in% c("Head", "Spouse/partner"))
+filtered_data_hh$age <- factor(filtered_data_hh$age)
 
-# Calculate literacy percentage for other household members
-literacy_percentage_others <- other_members_data_hh %>% 
-  summarize(literacy_rate = mean(literate, na.rm = TRUE) * 100)
-
-# Print the literacy percentage for other household members
-print(literacy_percentage_others)
+# Plot edulevel as a function of age with boxplot
+ggplot(filtered_data_hh, aes(x = as.factor(age), y = edulevel)) +
+  geom_boxplot(alpha = 0.5) + # Add transparency to the boxplots
+  labs(title = "Education Level by Age (Excluding edulevel > 20)",
+       x = "Age",
+       y = "Niveau d'éducation") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) + # Rotate x-axis labels for better readability
+  scale_x_discrete(breaks = unique(as.character(sort(unique(filtered_data_hh$age))[seq(1, length(unique(filtered_data_hh$age)), by = 5)]))) # Set breaks for every five years
 ```
 
 
 
 ```{r}
+
+data_hh$edulevel[data_hh$edulevel > 20] <- NaN
 # Calculate literacy percentage
 literacy_percentage <- data_hh %>% 
   group_by(relatehoh_str) %>%
-  summarize(literacy_rate = mean(literate, na.rm = TRUE) * 100)
+  summarize(literacy_rate = mean(literate, na.rm = TRUE) * 100,
+            edulevel_mean = mean(edulevel, na.rm = TRUE),
+            sexe = mean(male, na.rm = TRUE) * 100,
+            count = n()) %>%
+  arrange(desc(count))
+
+literacy_percentage_tot <- data_hh %>% 
+  summarize(literacy_rate = mean(literate, na.rm = TRUE) * 100,
+            edulevel_mean = mean(edulevel, na.rm = TRUE),
+            sexe = mean(male, na.rm = TRUE) * 100,
+            count = n()) %>%
+  arrange(desc(count))
 
 # Print the literacy percentage
 print(literacy_percentage)
+print(literacy_percentage_tot)
 ```
+```{r}
+data_hh %>% 
+  distinct(hhid) %>%
+  nrow()
+```
+
 
 ```{r}
 # Summarize data by hhid
-summary_data_hh <- data_hh %>% filter(edulevel <= 20) %>%
+summary_data_hh <- data_hh %>%
   group_by(hhid) %>%
   summarize(mean_edulevel = mean(edulevel, na.rm = TRUE),
             mean_literate = mean(literate, na.rm = TRUE)) %>%
@@ -133,7 +161,7 @@ Choix de la variable d'éducation :
 - Edulevel ou literate de la personne qui cuisine (proxy Spouse/Partner)
 - Edulevel du head du ménage : prend les décisions ?
 - Max de l'edulevel du ménage
-- Moyenne de l'edulevel des adultes du ménage (>18 ans par exemple)
+- Moyenne de l'edulevel des adultes du ménage (>18 ans par exemple) (non étudié)
 
 Elements de reflexion :
 - 96% des cuisiniers principaux dans un ménage sont des femmes
@@ -187,6 +215,11 @@ nrow(unique_first_rows)
 ```{r}
 hh_four = inner_join(data_hh, unique_first_rows, by="hhid")
 ```
+```{r}
+hh_four_treated <- hh_four %>% filter(treat == 1)
+length(unique(hh_four_treated$hhid))
+```
+
 
 ```{r}
 household_summary <- hh_four %>% filter(treat == 1) %>%
@@ -209,6 +242,12 @@ household_summary <- hh_four %>% filter(treat == 1) %>%
   # Replace non-finite values with NA
   mutate_if(~!all(is.finite(.)), ~replace(., !is.finite(.), NA))
 ```
+```{r}
+summary(household_summary[, c("mealslowpol_good_2", "n_meals_lastweek", "stovebuilt", "anystove", "goodcond")])
+
+```
+
+
 ```{r}
 #glimpse(household_summary)
 ```
@@ -369,7 +408,8 @@ hh_summary_exp <- data_hh %>%
     edulevel_mean = mean(edulevel, na.rm = TRUE),
     edulevel_max = max(edulevel, na.rm = TRUE),
     literacy_percent = mean(literate, na.rm = TRUE),
-    edulevel_spouse_partner = if_else(any(relatehoh_str == "Spouse/partner"), first(edulevel[relatehoh_str == "Spouse/partner"]), NA_real_)
+    edulevel_spouse_partner = if_else(any(relatehoh_str == "Spouse/partner"), first(edulevel[relatehoh_str == "Spouse/partner"]), NA_real_),
+    edulevel_head = if_else(any(relatehoh_str == "Head"), first(edulevel[relatehoh_str == "Head"]), NA_real_)
   ) %>%
   # Replace non-finite values with NA
   mutate_if(~!all(is.finite(.)), ~replace(., !is.finite(.), NA))
@@ -396,7 +436,7 @@ i = 1
 
 yvar = c("COad99", "COad99_2")
 
-x_list = c("literacy_percent", "edulevel_max", "edulevel_mean", "edulevel_spouse_partner")
+x_list = c("literacy_percent", "edulevel_max", "edulevel_mean", "edulevel_spouse_partner", "edulevel_head")
 
 
 for(x in x_list) {

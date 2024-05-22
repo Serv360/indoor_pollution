@@ -115,8 +115,8 @@ ggplot(summary_data_hh, aes(x = mean_literate, y = mean_edulevel)) +
   geom_point(alpha = 0.2) + # Add transparency to the points
   geom_smooth(method = "lm", se = FALSE) + # Add a linear regression line
   labs(title = "Mean Education Level by Mean Literacy Rate per Household",
-       x = "Mean Literacy Rate",
-       y = "Mean Education Level") +
+       x = "Taux de littératie dans le ménage (0-1)",
+       y = "Niveau d'éducation moyen (année)") +
   theme_minimal()
 ```
 

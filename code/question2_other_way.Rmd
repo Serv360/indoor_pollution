@@ -1,3 +1,9 @@
+---
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
 # Question 2
 
 ## Packages
@@ -8,7 +14,6 @@ library(tidyverse)
 library(rlang)
 ```
 
-
 ## Data households
 
 ```{r}
@@ -16,12 +21,14 @@ library(rlang)
 data_hh <- haven::read_dta("../data/HHBL_roster_FINAL.dta")
 
 # Inspect the data using tidyverse functions
-glimpse(data_hh)  # View the structure of the data in a tidyverse-friendly format
+#glimpse(data_hh)  # View the structure of the data in a tidyverse-friendly format
 ```
+
 ```{r}
 data_hh %>%
   summarise_all(~sum(!is.na(.)))
 ```
+
 ```{r}
 data_hh %>%
   group_by(hhid) %>%
@@ -29,7 +36,6 @@ data_hh %>%
     edulevel_spouse_partner = if_else(any(relatehoh_str == "Spouse/partner"), first(edulevel[relatehoh_str == "Spouse/partner"]), NA_real_)
   )
 ```
-
 
 ```{r}
 data_hh %>% group_by(hhid) %>%
@@ -42,7 +48,6 @@ data_hh %>% group_by(hhid) %>%
   summarise_all(~sum(!is.na(.)))
 ```
 
-
 ## Observation données education
 
 ```{r}
@@ -52,6 +57,7 @@ print(paste("school : ", attr(data_hh$school, "label")))
 print(paste("inschool : ", attr(data_hh$inschool, "label")))
 print(paste("shg : ", attr(data_hh$shg, "label")))
 ```
+
 ```{r}
 filtered_data_hh <- data_hh %>% 
   filter(edulevel <= 20)
@@ -68,7 +74,6 @@ ggplot(filtered_data_hh, aes(x = age, y = edulevel)) +
 ```{r}
 sort(unique(filtered_data_hh$age))
 ```
-
 
 ```{r}
 filtered_data_hh <- data_hh %>% 
@@ -98,8 +103,6 @@ ggplot(filtered_data_hh, aes(x = as.factor(age), y = edulevel)) +
   scale_x_discrete(breaks = unique(as.character(sort(unique(filtered_data_hh$age))[seq(1, length(unique(filtered_data_hh$age)), by = 5)]))) # Set breaks for every five years
 ```
 
-
-
 ```{r}
 
 data_hh$edulevel[data_hh$edulevel > 20] <- NaN
@@ -123,12 +126,12 @@ literacy_percentage_tot <- data_hh %>%
 print(literacy_percentage)
 print(literacy_percentage_tot)
 ```
+
 ```{r}
 data_hh %>% 
   distinct(hhid) %>%
   nrow()
 ```
-
 
 ```{r}
 # Summarize data by hhid
@@ -155,17 +158,28 @@ data_hh %>%
   arrange(relatehoh_str, male)
 ```
 
-
 Choix de la variable d'éducation :
-- Moyenne de l'edulevel ou du literate au niveau du ménage
-- Edulevel ou literate de la personne qui cuisine (proxy Spouse/Partner)
-- Edulevel du head du ménage : prend les décisions ?
-- Max de l'edulevel du ménage
-- Moyenne de l'edulevel des adultes du ménage (>18 ans par exemple) (non étudié)
+
+-    Moyenne de l'edulevel ou du literate au niveau du ménage
+
+-    Edulevel ou literate de la personne qui cuisine (proxy
+    Spouse/Partner)
+
+-    Edulevel du head du ménage : prend les décisions ?
+
+-    Max de l'edulevel du ménage
+
+-    Moyenne de l'edulevel des adultes du ménage (\>18 ans par exemple)
+    (non étudié)
 
 Elements de reflexion :
-- 96% des cuisiniers principaux dans un ménage sont des femmes
-- Les enfants ont un niveau d'illétrisme plus bas que les heads of family (majoritairement des hommes) et que les spouses/partners (majoritairement des femmes). Ils ont un edulevel déjà plus haut en moyenne à partir de 10-12 ans.
+
+-    96% des cuisiniers principaux dans un ménage sont des femmes
+
+-    Les enfants ont un niveau d'illétrisme plus bas que les heads of
+    family (majoritairement des hommes) et que les spouses/partners
+    (majoritairement des femmes). Ils ont un edulevel déjà plus haut en
+    moyenne à partir de 10-12 ans.
 
 ## Data prise en main du four
 
@@ -202,24 +216,36 @@ data_four %>%
   distinct() %>%
   nrow()
 ```
+
 ```{r}
 unique_first_rows <- data_four %>%
-  distinct(hhid_M, .keep_all = TRUE)
+  group_by(hhid) %>%
+  summarize(
+    weight = first(weight),
+    mealslowpol_good_2 = max(mealslowpol_good_2, na.rm = TRUE),
+    n_meals_lastweek = max(n_meals_lastweek, na.rm = TRUE),
+    stovebuilt = max(stovebuilt, na.rm = TRUE),
+    anystove = max(anystove, na.rm = TRUE),
+    goodcond = max(goodcond, na.rm = TRUE),
+    mealslowpol_good_2 = max(mealslowpol_good_2, na.rm = TRUE),
+    across(starts_with("v_mo_control"), ~first(.)),
+  ) %>%
 ```
 
 ```{r}
 nrow(unique_first_rows)
 ```
 
+## Jointure
 
 ```{r}
 hh_four = inner_join(data_hh, unique_first_rows, by="hhid")
 ```
+
 ```{r}
 hh_four_treated <- hh_four %>% filter(treat == 1)
 length(unique(hh_four_treated$hhid))
 ```
-
 
 ```{r}
 household_summary <- hh_four %>% filter(treat == 1) %>%
@@ -242,21 +268,21 @@ household_summary <- hh_four %>% filter(treat == 1) %>%
   # Replace non-finite values with NA
   mutate_if(~!all(is.finite(.)), ~replace(., !is.finite(.), NA))
 ```
+
 ```{r}
 summary(household_summary[, c("mealslowpol_good_2", "n_meals_lastweek", "stovebuilt", "anystove", "goodcond")])
 
 ```
 
-
 ```{r}
 #glimpse(household_summary)
 ```
 
+## Regressions univariées
 
 ```{r}
 yvar <- c("stovebuilt", "anystove", "goodcond", "mealslowpol_good_2", "goodmeals75")
 ```
-
 
 ```{r}
 household_summary$goodmeals_prop <- household_summary$mealslowpol_good_2 / household_summary$n_meals_lastweek
@@ -311,6 +337,8 @@ for(x in x_list) {
   }
 }
 ```
+
+## Regression multivariée
 
 ```{r}
 
@@ -370,7 +398,6 @@ data_exposure %>% filter(primarycook_bl == 1) %>%
   summarise_all(~sum(!is.na(.)))
 ```
 
-
 ## Observation données pollution intérieure primary cook
 
 ```{r}
@@ -419,6 +446,7 @@ hh_summary_exp <- data_hh %>%
 hh_summary_exp %>% summarise_all(~sum(!is.na(.)))
 ```
 
+## Jointure
 
 ```{r}
 hh_exposure = inner_join(hh_summary_exp, data_exposure, by="hhid") %>% filter(primarycook_bl == 1)
@@ -430,6 +458,8 @@ hh_exposure %>% select(edulevel_mean, edulevel_max,
                        COad99, COad99_2
                        ) %>% summarise_all(~sum(!is.na(.)))
 ```
+
+## Régressions univariées
 
 ```{r}
 i = 1
@@ -476,6 +506,8 @@ for(x in x_list) {
 }
 ```
 
+## Régression multivariée
+
 ```{r}
 x_list2 = c("literacy_percent", "edulevel_max", "edulevel_mean")
 
@@ -517,4 +549,3 @@ for (y in yvar) {
     #i <- i + 1
 }
 ```
-

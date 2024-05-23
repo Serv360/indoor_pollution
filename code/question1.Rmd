@@ -1,4 +1,156 @@
-```{r}
+# Question 1
 
+## Packages
+
+```{r}
+# Load the tidyverse package
+library(tidyverse)
+library(rlang)
 ```
 
+## Data health primary cook
+
+```{r}
+# Read the .dta file using haven::read_dta
+data_adult_health <- haven::read_dta("../data/ADHealth-FEV_MoOwnStove_Replication.dta")
+
+# Inspect the data using tidyverse functions
+#glimpse(data_adult_health)  # View the structure of the data in a tidyverse-friendly format
+```
+
+```{r}
+data_adult_health %>% select(hhid, primarycook, primarycook_bl, fev1_99, fev1fvc_99, cold_or_cough, anyillness) %>%
+  summarise_all(~sum(!is.na(.)))
+```
+
+```{r}
+print(paste("primarycook : ", attr(data_adult_health$primarycook, "label")))
+print(paste("primarycook_bl : ", attr(data_adult_health$primarycook_bl, "label")))
+print(paste("fev1_99 : ", attr(data_adult_health$fev1_99, "label")))
+print(paste("fev1fvc_99 : ", attr(data_adult_health$fev1fvc_99, "label")))
+print(paste("cold_or_cough : ", attr(data_adult_health$cold_or_cough, "label")))
+print(paste("anyillness : ", attr(data_adult_health$anyillness, "label")))
+```
+
+```{r}
+data_adult_health_filtered <- data_adult_health %>% filter(primarycook_bl == 1 | primarycook == 1) %>% select(hhid, primarycook, primarycook_bl, fev1_99, fev1fvc_99, cold_or_cough, anyillness, starts_with("v_mo_control")) %>%
+  # Replace non-finite values with NA
+  mutate_if(~!all(is.finite(.)), ~replace(., !is.finite(.), NA))
+```
+
+## Données four
+
+```{r}
+data_four <- haven::read_dta("../data/StoveVar_MoOwnStove_Replication.dta")
+```
+
+```{r}
+data_four_filtered <- data_four %>% filter(treat == 1) %>%
+  group_by(hhid) %>%
+  summarize(
+    weight = first(weight),
+    mealslowpol_good_2 = max(mealslowpol_good_2, na.rm = TRUE),
+    n_meals_lastweek = max(n_meals_lastweek, na.rm = TRUE),
+    stovebuilt = max(stovebuilt, na.rm = TRUE),
+    anystove = max(anystove, na.rm = TRUE),
+    goodcond = max(goodcond, na.rm = TRUE),
+    mealslowpol_good_2 = max(mealslowpol_good_2, na.rm = TRUE)
+  ) %>%
+  # Replace non-finite values with NA
+  mutate_if(~!all(is.finite(.)), ~replace(., !is.finite(.), NA))
+```
+
+```{r}
+data_four_filtered$goodmeals_prop <- data_four_filtered$mealslowpol_good_2 / data_four_filtered$n_meals_lastweek
+data_four_filtered$goodmeals_prop[data_four_filtered$mealslowpol_good_2 == 0 & data_four_filtered$n_meals_lastweek == 0] <- 0
+
+data_four_filtered$goodmeals75 <- ifelse(!is.na(data_four_filtered$goodmeals_prop), 0, NA)
+
+data_four_filtered$goodmeals75[data_four_filtered$goodmeals_prop >= 0.75 & !is.na(data_four_filtered$goodmeals_prop)] <- 1
+```
+
+```{r}
+summary(data_four_filtered[, c("mealslowpol_good_2", "n_meals_lastweek", "stovebuilt", "anystove", "goodcond")])
+```
+
+```{r}
+summary(data_adult_health_filtered[, c("hhid", "primarycook", "primarycook_bl", "fev1_99", "fev1fvc_99", "cold_or_cough", "anyillness")])
+```
+
+```{r}
+yvar <- c("stovebuilt", "anystove", "goodcond", "mealslowpol_good_2", "goodmeals75")
+```
+
+## Jointure
+
+```{r}
+health_four = inner_join(data_adult_health_filtered, data_four_filtered, by="hhid")
+```
+
+```{r}
+summary(health_four[, c("stovebuilt", "anystove", "goodcond", "mealslowpol_good_2", "goodmeals75", "hhid", "primarycook", "primarycook_bl", "fev1_99", "fev1fvc_99", "cold_or_cough", "anyillness")])
+```
+
+## Régressions multivariées
+
+```{r}
+x_list2 = c("fev1_99", "fev1fvc_99") # c("cold_or_cough", "anyillness")
+
+for (y in yvar) {
+  #   threshold_top_y <- quantile(health_four[[y]], probs = 0.995, na.rm = TRUE)
+  #   threshold_bottom_y <- quantile(health_four[[y]], probs = 0.005, na.rm = TRUE)
+  # 
+  #   cleaned_data <- health_four %>%
+  #     filter(.data[[y]] >= threshold_bottom_y, .data[[y]] <= threshold_top_y)
+  #   
+  #   for (x in x_list2) {
+  #     threshold_top_x <- quantile(health_four[[x]], probs = 0.995, na.rm = TRUE)
+  #   threshold_bottom_x <- quantile(health_four[[x]], probs = 0.005, na.rm = TRUE)
+  # 
+  #   cleaned_data <- cleaned_data %>%
+  # filter(.data[[x]] >= threshold_bottom_x, .data[[x]] <= threshold_top_x)
+  #   }
+    
+
+    
+    # Régression pour le Panel A
+    formuleA = paste(y, "~", paste(x_list2, collapse=" + "), "+", paste(grep("^v_mo_control", names(health_four), value = TRUE), collapse = " + "), sep = " ")
+    model_panel_a <- lm(formuleA, data = health_four, weights = weight)
+  
+    #print(summary(model_panel_a, cluster=c("hhid_M")))
+    print(paste("Regression de", y, "sur", paste(x_list2, collapse=" + ")))
+    print(summary(model_panel_a)$coefficients[1:(length(x_list2)+1), 1:4])
+    print(nobs(model_panel_a))
+}
+```
+
+```{r}
+x_list2 = c("cold_or_cough", "anyillness") # c("cold_or_cough", "anyillness")
+
+for (y in yvar) {
+  #   threshold_top_y <- quantile(health_four[[y]], probs = 0.995, na.rm = TRUE)
+  #   threshold_bottom_y <- quantile(health_four[[y]], probs = 0.005, na.rm = TRUE)
+  # 
+  #   cleaned_data <- health_four %>%
+  #     filter(.data[[y]] >= threshold_bottom_y, .data[[y]] <= threshold_top_y)
+  #   
+  #   for (x in x_list2) {
+  #     threshold_top_x <- quantile(health_four[[x]], probs = 0.995, na.rm = TRUE)
+  #   threshold_bottom_x <- quantile(health_four[[x]], probs = 0.005, na.rm = TRUE)
+  # 
+  #   cleaned_data <- cleaned_data %>%
+  # filter(.data[[x]] >= threshold_bottom_x, .data[[x]] <= threshold_top_x)
+  #   }
+    
+
+    
+    # Régression pour le Panel A
+    formuleA = paste(y, "~", paste(x_list2, collapse=" + "), "+", paste(grep("^v_mo_control", names(health_four), value = TRUE), collapse = " + "), sep = " ")
+    model_panel_a <- lm(formuleA, data = health_four, weights = weight)
+  
+    #print(summary(model_panel_a, cluster=c("hhid_M")))
+    print(paste("Regression de", y, "sur", paste(x_list2, collapse=" + ")))
+    print(summary(model_panel_a)$coefficients[1:(length(x_list2)+1), 1:4])
+    print(nobs(model_panel_a))
+}
+```
